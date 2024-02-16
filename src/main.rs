@@ -10,26 +10,25 @@ mod requests;
 mod settings;
 mod upstreams;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let settings = settings::Settings::load().expect("Failed to load settings");
-    let queue = listeners::Listeners::new(&settings.listeners).start();
+    let queue = listeners::Listeners::new(&settings.listeners)
+        .await
+        .expect("Failed to create new listeners")
+        .listen()
+        .await
+        .expect("Failed to listen on listeners");
 
     let resolver =
         resolver::Resolver::new(queue, &settings.resolver).expect("Failed to create resolver");
-    let arc_resolver = Arc::new(resolver);
 
-    arc_resolver.start().expect("Failed to start resolver");
+        resolver.start().await;
 
     println!("Press Enter to exit...");
-
-    // Flush stdout to ensure the message is displayed before blocking on input
     io::stdout().flush().expect("Failed to flush stdout");
-
-    // Wait for the user to press Enter
     let mut exit_command = String::new();
-    io::stdin()
-        .read_line(&mut exit_command)
-        .expect("Failed to read line");
-
+    io::stdin().read_line(&mut exit_command).expect("Failed to read line");
     println!("Exiting...");
 }
+

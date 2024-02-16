@@ -1,18 +1,9 @@
 use crate::dns::Message;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::SocketAddr;
 use std::sync::Arc;
-
-pub trait Respondable {
-    fn send_response(&self, data: &[u8]) -> std::io::Result<()>;
-}
-
-pub struct Request {
-    pub connection_info: ConnectionInfo,
-    pub message: Message,
-}
-
-use std::sync::Mutex;
+use tokio::io::{AsyncWriteExt, AsyncWrite};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::Mutex;
 
 pub enum ConnectionInfo {
     UDP {
@@ -20,29 +11,41 @@ pub enum ConnectionInfo {
         addr: SocketAddr,
     },
     TCP {
-        stream: Mutex<TcpStream>,
+        stream: Arc<Mutex<TcpStream>>,
     },
 }
 
-impl Request {
-    pub fn respond(&self, message: &Message) -> std::io::Result<()> {
-        let response_data = message.serialize();
-        self.connection_info.send_response(&response_data)
-    }
+pub struct Request {
+    pub connection_info: ConnectionInfo,
+    pub message: Message,
 }
 
-impl Respondable for ConnectionInfo {
-    fn send_response(&self, data: &[u8]) -> std::io::Result<()> {
-        match self {
+impl Request {
+    pub fn new_udp(socket: Arc<UdpSocket>, addr: SocketAddr, message: Message) -> Self {
+        Self {
+            connection_info: ConnectionInfo::UDP { socket, addr },
+            message,
+        }
+    }
+
+    pub fn new_tcp(stream: Arc<Mutex<TcpStream>>, message: Message) -> Self {
+        Self {
+            connection_info: ConnectionInfo::TCP { stream },
+            message,
+        }
+    }
+
+    pub async fn send_response(&self, response: &[u8]) -> std::io::Result<()> {
+        match &self.connection_info {
             ConnectionInfo::UDP { socket, addr } => {
-                socket.send_to(data, addr)?;
+                socket.send_to(response, addr).await?;
             }
             ConnectionInfo::TCP { stream } => {
-                let mut stream = stream.lock().unwrap(); // Lock the mutex to get mutable access
-                let mut len_buf = [0u8; 2];
-                len_buf.copy_from_slice(&(data.len() as u16).to_be_bytes());
-                stream.write_all(&len_buf)?;
-                stream.write_all(data)?;
+                let mut stream = stream.lock().await;
+                stream.write_all(response).await?;
+                stream.flush().await?;
+                // Consider if I need to close the stream, adjust accordingly
+                // For protocols that keep the connection open, I might not close here
             }
         }
         Ok(())

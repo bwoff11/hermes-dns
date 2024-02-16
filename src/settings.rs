@@ -16,6 +16,7 @@ pub struct ListenersSettings {
 #[derive(Debug, Deserialize)]
 pub struct ListenerSettings {
     pub enabled: bool,
+    pub address: String,
     pub port: u16,
 }
 
