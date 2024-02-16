@@ -3,7 +3,7 @@ use crate::requests::Request;
 use crate::settings::ListenersSettings;
 use std::io;
 use std::sync::Arc;
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::{tcp, TcpListener, UdpSocket};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 pub struct Listeners {
@@ -34,7 +34,7 @@ impl Listeners {
     }
 
     pub async fn listen(&self) -> io::Result<Receiver<Request>> {
-        let (tx, mut rx): (Sender<Request>, Receiver<Request>) = mpsc::channel(100);
+        let (tx, rx): (Sender<Request>, Receiver<Request>) = mpsc::channel(100);
 
         if let Some(udp_socket) = self.udp_listener.as_ref() {
             let udp_sender = tx.clone();
@@ -47,7 +47,16 @@ impl Listeners {
             println!("UDP listener is disabled");
         }
 
-        // Tcp implementation will be added here later
+        if let Some(tcp_listener) = self.tcp_listener.as_ref() {
+            let tcp_sender = tx.clone();
+            tokio::spawn(Self::handle_tcp(tcp_listener.clone(), tcp_sender));
+            println!(
+                "Listening for TCP requests on {}",
+                tcp_listener.local_addr().unwrap()
+            ); // Consider handling the Result properly
+        } else {
+            println!("TCP listener is disabled");
+        }
 
         Ok(rx)
     }
@@ -68,6 +77,24 @@ impl Listeners {
         }
     }
 
-    // Placeholder for TCP handler
-    // async fn handle_tcp(...) { ... }
+
+    async fn handle_tcp(listener: Arc<TcpListener>, sender: Sender<Request>) -> io::Result<()> {
+        loop {
+            /*let (stream, addr) = listener.accept().await?;
+            let sender = sender.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 512];
+                let size = stream.read(&mut buf).await.unwrap();
+                match Message::deserialize(&buf[..size]) {
+                    Ok(msg) => {
+                        let request = Request::new_tcp(Arc::new(tokio::sync::Mutex::new(stream)), msg);
+                        if sender.send(request).await.is_err() {
+                            eprintln!("Failed to send TCP request through channel");
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to deserialize message: {}", e),
+                }
+            });*/
+        }
+    }
 }
